@@ -119,105 +119,95 @@ function updateCalculations() {
   let cashFlowsOption1 = [];
   let cashFlowsOption2 = [];
 
-  let hpsUnitsRemaining = hpsUnits;
-  let ledUnitsInstalled = 0;
+  // Option 1 Constants
+  // Energy cost per annum
+  const totalEnergyHPS = (hpsUnits * hpsConsumption * operatingHours) / 1000; // kWh
+  const energyCostOption1 = totalEnergyHPS * energyCost;
 
-  // Annual HPS luminaire replacements
-  const annualHPSReplacements = Math.round(hpsUnits * hpsReplacementRate);
+  // Lamp replacement cost per annum
+  const totalLampReplacementCost = hpsUnits * hpsLampCost;
+  const lampReplacementCostOption1 = totalLampReplacementCost / hpsLampLife;
+
+  // Luminaire replacement cost per annum
+  const unitsReplacedPerYear = hpsUnits * hpsReplacementRate;
+  const luminaireReplacementCostPerUnit = ledLuminaireCost + ledInstallationCost;
+  const luminaireReplacementCostOption1 = unitsReplacedPerYear * luminaireReplacementCostPerUnit;
+
+  // Total annual cost for Option 1
+  const totalAnnualCostOption1 = energyCostOption1 + lampReplacementCostOption1 + luminaireReplacementCostOption1;
+
+  // Option 2 Constants
+  // Initial investment
+  const initialInvestmentOption2 = ledUnits * (ledLuminaireCost + ledInstallationCost);
+
+  // Energy cost per annum
+  let totalEnergyLED = (ledUnits * ledConsumption * operatingHours) / 1000; // kWh
+  const energyCostNoDimming = totalEnergyLED * energyCost;
+
+  if (includeDimming) {
+    totalEnergyLED *= 1 - ledDimmingReduction;
+  }
+  const energyCostOption2 = totalEnergyLED * energyCost;
+
+  // Energy cost savings through dimming
+  const energySavingsThroughDimming = energyCostNoDimming - energyCostOption2;
+
+  // Lines company charge savings
+  const totalLinesChargeSavings = ledUnits * linesChargeSavings;
+
+  // Annual energy cost after lines charge savings
+  const netEnergyCostOption2 = energyCostOption2 - totalLinesChargeSavings;
+
+  // Annual maintenance cost (LED cleaning)
+  const maintenanceCostOption2 = [];
+  for (let t = 0; t <= analysisPeriod; t++) {
+    if (t > 0 && ledCleaningFrequency > 0 && t % ledCleaningFrequency === 0) {
+      maintenanceCostOption2[t] = ledUnits * ledCleaningCost;
+    } else {
+      maintenanceCostOption2[t] = 0;
+    }
+  }
 
   // Calculate for each year
   for (let t = 0; t <= analysisPeriod; t++) {
-    // Option 1 Calculations (Maintain HPS)
-    let energyCostOption1 = 0;
-    let lampReplacementCostOption1 = 0;
-    let luminaireReplacementCostOption1 = 0;
-    let totalCostOption1 = 0;
-
-    // Energy consumption
-    const totalConsumptionHPS = hpsUnitsRemaining * hpsConsumption;
-    const totalConsumptionLED = ledUnitsInstalled * ledConsumption;
-    const totalEnergyOption1 =
-      ((totalConsumptionHPS + totalConsumptionLED) * operatingHours) / 1000; // Convert W to kW
-    energyCostOption1 = totalEnergyOption1 * energyCost;
-
-    // Lamp replacements every hpsLampLife years
-    if (t > 0 && hpsLampLife > 0 && t % hpsLampLife === 0) {
-      lampReplacementCostOption1 = hpsUnitsRemaining * hpsLampCost;
-    }
-
-    // Luminaire replacements (HPS to LED)
-    if (t > 0 && annualHPSReplacements > 0 && hpsUnitsRemaining > 0) {
-      const unitsToReplace = Math.min(annualHPSReplacements, hpsUnitsRemaining);
-      luminaireReplacementCostOption1 =
-        unitsToReplace * (ledLuminaireCost + ledInstallationCost);
-      hpsUnitsRemaining -= unitsToReplace;
-      ledUnitsInstalled += unitsToReplace;
-    }
-
-    totalCostOption1 =
-      energyCostOption1 + lampReplacementCostOption1 + luminaireReplacementCostOption1;
+    // Option 1
+    let totalCostOption1 = totalAnnualCostOption1;
 
     // Discount the cost
     const discountedCostOption1 = totalCostOption1 / Math.pow(1 + discountRate, t);
-    npvOption1 += discountedCostOption1;
+    if (t > 0) {
+      npvOption1 += discountedCostOption1;
+    }
 
     // Cumulative cost
     if (t === 0) {
-      cumulativeCostOption1.push(totalCostOption1);
+      cumulativeCostOption1[t] = 0; // No cost at year 0
     } else {
-      cumulativeCostOption1.push(
-        cumulativeCostOption1[t - 1] + totalCostOption1
-      );
+      cumulativeCostOption1[t] = cumulativeCostOption1[t - 1] + totalCostOption1;
     }
 
-    cashFlowsOption1.push(totalCostOption1);
+    cashFlowsOption1[t] = totalCostOption1;
 
-    // Option 2 Calculations (Replace with LED)
+    // Option 2
     let totalCostOption2 = 0;
 
     if (t === 0) {
-      // Initial investment
-      totalCostOption2 = ledUnits * (ledLuminaireCost + ledInstallationCost);
+      totalCostOption2 = initialInvestmentOption2 + netEnergyCostOption2 - energySavingsThroughDimming;
+      npvOption2 += initialInvestmentOption2; // Initial investment at t=0 (not discounted)
+      cumulativeCostOption2[t] = totalCostOption2;
+      cashFlowsOption2[t] = totalCostOption2;
     } else {
-      // Energy consumption
-      let totalEnergyOption2 = (ledUnits * ledConsumption * operatingHours) / 1000;
-      if (includeDimming) {
-        totalEnergyOption2 *= 1 - ledDimmingReduction;
-      }
-      let energyCostOption2 = totalEnergyOption2 * energyCost;
-
-      // Maintenance cost (LED cleaning)
-      let maintenanceCostOption2 = 0;
-      if (ledCleaningFrequency > 0 && t % ledCleaningFrequency === 0) {
-        maintenanceCostOption2 = ledUnits * ledCleaningCost;
-      }
-
-      // Lines company charge savings
-      let linesSavings = ledUnits * linesChargeSavings;
-
-      totalCostOption2 =
-        energyCostOption2 + maintenanceCostOption2 - linesSavings;
+      totalCostOption2 = netEnergyCostOption2 + maintenanceCostOption2[t] - energySavingsThroughDimming;
+      const discountedCostOption2 = totalCostOption2 / Math.pow(1 + discountRate, t);
+      npvOption2 += discountedCostOption2;
+      cumulativeCostOption2[t] = cumulativeCostOption2[t - 1] + totalCostOption2;
+      cashFlowsOption2[t] = totalCostOption2;
     }
-
-    // Discount the cost
-    const discountedCostOption2 = totalCostOption2 / Math.pow(1 + discountRate, t);
-    npvOption2 += discountedCostOption2;
-
-    // Cumulative cost
-    if (t === 0) {
-      cumulativeCostOption2.push(totalCostOption2);
-    } else {
-      cumulativeCostOption2.push(
-        cumulativeCostOption2[t - 1] + totalCostOption2
-      );
-    }
-
-    cashFlowsOption2.push(totalCostOption2);
   }
 
   // Update Results on the Page
-  document.getElementById('npvOption1').innerText = `$${npvOption1.toFixed(2)}`;
-  document.getElementById('npvOption2').innerText = `$${npvOption2.toFixed(2)}`;
+  document.getElementById('npvOption1').innerText = `$${npvOption1.toFixed(0)}`;
+  document.getElementById('npvOption2').innerText = `$${npvOption2.toFixed(0)}`;
 
   // Calculate Payback Period
   let paybackPeriod = null;
@@ -227,7 +217,7 @@ function updateCalculations() {
       break;
     }
   }
-  document.getElementById('paybackPeriod').innerText = paybackPeriod
+  document.getElementById('paybackPeriod').innerText = paybackPeriod !== null
     ? `${paybackPeriod} years`
     : 'Beyond analysis period';
 
